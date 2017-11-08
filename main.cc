@@ -39,15 +39,25 @@ bool verify_callback(const uint8_t *payload, size_t payload_len,
   CK_MECHANISM_TYPE mechanism;
   SECOidTag oid;
   uint32_t hash_length;
+  SECItem param = {siBuffer, nullptr, 0};
+  CK_RSA_PKCS_PSS_PARAMS rsa_pss_params = {CKM_SHA256, CKG_MGF1_SHA256, 32};
   switch (signature_algorithm) {
     case (ES256):
       mechanism = CKM_ECDSA;
       oid = SEC_OID_SHA256;
       hash_length = 32;
       break;
+    case (PS256):
+      mechanism = CKM_RSA_PKCS_PSS;
+      oid = SEC_OID_SHA256;
+      hash_length = 32;
+      param = {siBuffer, reinterpret_cast<unsigned char *>(&rsa_pss_params),
+               sizeof(rsa_pss_params)};
+      break;
     default:
       return false;
   }
+  printf("Verifying signature (%d, %lu)\n", oid, mechanism);
 
   uint8_t hash_buf[hash_length];
   SECStatus rv = PK11_HashBuf(oid, hash_buf, payload, payload_len);
@@ -72,7 +82,7 @@ bool verify_callback(const uint8_t *payload, size_t payload_len,
   }
   SECItem signature_item = {siBuffer, const_cast<uint8_t *>(signature),
                             static_cast<unsigned int>(signature_len)};
-  rv = PK11_VerifyWithMechanism(key.get(), mechanism, nullptr, &signature_item,
+  rv = PK11_VerifyWithMechanism(key.get(), mechanism, &param, &signature_item,
                                 &hash_item, nullptr);
   if (rv != SECSuccess) {
     return false;
@@ -80,7 +90,6 @@ bool verify_callback(const uint8_t *payload, size_t payload_len,
 
   (void)cert_chain;
   (void)cert_chain_len;
-  printf("Verification successful\n");
 
   return true;
 }
@@ -90,7 +99,14 @@ int main() {
   if (rv != SECSuccess) {
     return 1;
   }
+  printf("Verifying single ES256 (191, 4161) COSE signature\n");
   bool result =
       verify_signature_with_cpp(PAYLOAD, 20, SIGNATURE, 1062, verify_callback);
+
+  printf("Verifying COSE signature with ES256 (191, 4161) and PS256 (191, 13)\n");
+  result &= verify_signature_with_cpp(PAYLOAD, 20, SIGNATURE_ES256_PS256, 3480,
+                                      verify_callback);
+  printf("%s\n",
+         result ? "Verification successful :)" : "Verification failed :(");
   return result ? 0 : 1;
 }
