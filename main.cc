@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <cstddef>
@@ -14,23 +15,63 @@ enum SignatureType { ES256 = 0, ES384 = 1, ES521 = 2, PS256 = 3 };
 
 extern "C" {
 typedef bool (*callback)(const uint8_t *payload, size_t payload_len,
-                         const uint8_t *cert_chain, size_t cert_chain_len,
-                         const uint8_t *ee_cert, size_t ee_cert_len,
-                         const uint8_t *signature, size_t signature_len,
-                         uint8_t algorithm);
+                         const uint8_t **cert_chain, size_t cert_chain_len,
+                         const size_t *certs_len, const uint8_t *ee_cert,
+                         size_t ee_cert_len, const uint8_t *signature,
+                         size_t signature_len, uint8_t algorithm);
 bool verify_signature_with_cpp(const uint8_t *payload, size_t payload_len,
                                const uint8_t *signature, size_t signature_len,
                                callback);
+}
+
+void check_hard_coded_certs(const uint8_t **cert_chain, size_t cert_chain_len,
+                            const size_t *certs_len) {
+  // Very hacky and fragile check that the intermediate certs are correct.
+  switch (cert_chain_len) {
+    case 2: {
+      const uint8_t *cert = cert_chain[0];
+      size_t cert_len = certs_len[0];
+      assert(cert_len == sizeof(P256_INT));
+      assert(memcmp(cert, P256_INT, cert_len) == 0);
+      cert = cert_chain[1];
+      cert_len = certs_len[1];
+      assert(cert_len == sizeof(P256_ROOT));
+      assert(memcmp(cert, P256_ROOT, cert_len) == 0);
+      break;
+    }
+    case 4: {
+      const uint8_t *cert = cert_chain[0];
+      size_t cert_len = certs_len[0];
+      assert(cert_len == sizeof(P256_INT));
+      assert(memcmp(cert, P256_INT, cert_len) == 0);
+      cert = cert_chain[1];
+      cert_len = certs_len[1];
+      assert(cert_len == sizeof(P256_ROOT));
+      assert(memcmp(cert, P256_ROOT, cert_len) == 0);
+      cert = cert_chain[2];
+      cert_len = certs_len[2];
+      assert(cert_len == sizeof(RSA_ROOT));
+      assert(memcmp(cert, RSA_ROOT, cert_len) == 0);
+      cert = cert_chain[3];
+      cert_len = certs_len[3];
+      assert(cert_len == sizeof(RSA_INT));
+      assert(memcmp(cert, RSA_INT, cert_len) == 0);
+      break;
+    }
+    default:
+      // In this case something went wrong.
+      assert(true == false);
+  }
 }
 
 /* Verification function called from cose-rust.
  * Returns true if everything goes well and the signature is good, false in any
  * other case. */
 bool verify_callback(const uint8_t *payload, size_t payload_len,
-                     const uint8_t *cert_chain, size_t cert_chain_len,
-                     const uint8_t *ee_cert, size_t ee_cert_len,
-                     const uint8_t *signature, size_t signature_len,
-                     uint8_t signature_algorithm) {
+                     const uint8_t **cert_chain, size_t cert_chain_len,
+                     const size_t *certs_len, const uint8_t *ee_cert,
+                     size_t ee_cert_len, const uint8_t *signature,
+                     size_t signature_len, uint8_t signature_algorithm) {
   ScopedPK11SlotInfo slot(PK11_GetInternalSlot());
   if (!slot) {
     return false;
@@ -58,6 +99,7 @@ bool verify_callback(const uint8_t *payload, size_t payload_len,
       return false;
   }
   printf("Verifying signature (%d, %lu)\n", oid, mechanism);
+  check_hard_coded_certs(cert_chain, cert_chain_len, certs_len);
 
   uint8_t hash_buf[hash_length];
   SECStatus rv = PK11_HashBuf(oid, hash_buf, payload, payload_len);
@@ -88,9 +130,6 @@ bool verify_callback(const uint8_t *payload, size_t payload_len,
     return false;
   }
 
-  (void)cert_chain;
-  (void)cert_chain_len;
-
   return true;
 }
 
@@ -103,7 +142,8 @@ int main() {
   bool result =
       verify_signature_with_cpp(PAYLOAD, 20, SIGNATURE, 1062, verify_callback);
 
-  printf("Verifying COSE signature with ES256 (191, 4161) and PS256 (191, 13)\n");
+  printf(
+      "Verifying COSE signature with ES256 (191, 4161) and PS256 (191, 13)\n ");
   result &= verify_signature_with_cpp(PAYLOAD, 20, SIGNATURE_ES256_PS256, 3480,
                                       verify_callback);
   printf("%s\n",
