@@ -11,7 +11,7 @@
 #include "scoped_ptr.h"
 #include "test_data.h"
 
-enum SignatureType { ES256 = 0, ES384 = 1, ES521 = 2, PS256 = 3 };
+enum SignatureType { ES256 = 0, ES384 = 1, ES512 = 2, PS256 = 3 };
 
 extern "C" {
 typedef bool (*callback)(const uint8_t *payload, size_t payload_len,
@@ -19,9 +19,9 @@ typedef bool (*callback)(const uint8_t *payload, size_t payload_len,
                          const size_t *certs_len, const uint8_t *ee_cert,
                          size_t ee_cert_len, const uint8_t *signature,
                          size_t signature_len, uint8_t algorithm);
-bool verify_signature_with_cpp(const uint8_t *payload, size_t payload_len,
-                               const uint8_t *signature, size_t signature_len,
-                               callback);
+bool verify_signature_ffi(const uint8_t *payload, size_t payload_len,
+                          const uint8_t *signature, size_t signature_len,
+                          callback);
 }
 
 void check_hard_coded_certs(const uint8_t **cert_chain, size_t cert_chain_len,
@@ -31,23 +31,23 @@ void check_hard_coded_certs(const uint8_t **cert_chain, size_t cert_chain_len,
     case 2: {
       const uint8_t *cert = cert_chain[0];
       size_t cert_len = certs_len[0];
-      assert(cert_len == sizeof(P256_INT));
-      assert(memcmp(cert, P256_INT, cert_len) == 0);
-      cert = cert_chain[1];
-      cert_len = certs_len[1];
       assert(cert_len == sizeof(P256_ROOT));
       assert(memcmp(cert, P256_ROOT, cert_len) == 0);
+      cert = cert_chain[1];
+      cert_len = certs_len[1];
+      assert(cert_len == sizeof(P256_INT));
+      assert(memcmp(cert, P256_INT, cert_len) == 0);
       break;
     }
     case 4: {
       const uint8_t *cert = cert_chain[0];
       size_t cert_len = certs_len[0];
-      assert(cert_len == sizeof(P256_INT));
-      assert(memcmp(cert, P256_INT, cert_len) == 0);
-      cert = cert_chain[1];
-      cert_len = certs_len[1];
       assert(cert_len == sizeof(P256_ROOT));
       assert(memcmp(cert, P256_ROOT, cert_len) == 0);
+      cert = cert_chain[1];
+      cert_len = certs_len[1];
+      assert(cert_len == sizeof(P256_INT));
+      assert(memcmp(cert, P256_INT, cert_len) == 0);
       cert = cert_chain[2];
       cert_len = certs_len[2];
       assert(cert_len == sizeof(RSA_ROOT));
@@ -140,12 +140,12 @@ int main() {
   }
   printf("Verifying single ES256 (191, 4161) COSE signature\n");
   bool result =
-      verify_signature_with_cpp(PAYLOAD, 20, SIGNATURE, 1062, verify_callback);
+      verify_signature_ffi(PAYLOAD, 20, SIGNATURE, 1062, verify_callback);
 
   printf(
       "Verifying COSE signature with ES256 (191, 4161) and PS256 (191, 13)\n ");
-  result &= verify_signature_with_cpp(PAYLOAD, 20, SIGNATURE_ES256_PS256, 3480,
-                                      verify_callback);
+  result &= verify_signature_ffi(PAYLOAD, 20, SIGNATURE_ES256_PS256, 3480,
+                                 verify_callback);
   printf("%s\n",
          result ? "Verification successful :)" : "Verification failed :(");
   return result ? 0 : 1;
